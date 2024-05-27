@@ -1,18 +1,17 @@
 ---
 - hosts: vcenter
   gather_facts: no
+  vars_files: /root/vm_migration/vcenter_creds.yaml
   tasks:
     - name: Gather all registered virtual machines
       community.vmware.vmware_vm_info:
-        hostname: '192.168.200.80'
-        username: 'administrator@vsphere.local'   
-        password: 'Root123,'
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: no
       delegate_to: localhost
       register: vm_info
 
-    - debug:
-        var: vm_info.virtual_machines
     - name: Read Vm from CSV file
       community.general.read_csv:
         path: list_vm.csv
@@ -23,9 +22,9 @@
 
     - name: Collecter les informations de disque de VM
       community.vmware.vmware_guest_disk_info:
-        hostname: '192.168.200.80'
-        username: 'administrator@vsphere.local'
-        password: 'Root123,'
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: no
         datacenter: "{{ item.vcenter_name | trim }}"
         name: "{{ item.vm_name | trim }}"
@@ -40,9 +39,9 @@
 
     - name: Collecter les informations de datastore de VM
       community.vmware.vmware_datastore_info:
-        hostname: '192.168.200.80'
-        username: 'administrator@vsphere.local'
-        password: 'Root123,'
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: no
         datacenter_name: "{{ item.datacenter_name }}"
         name: "{{ item.datastore_name }}"
@@ -60,9 +59,9 @@
       delegate_to: localhost
     - name: Cloner une VM
       community.vmware.vmware_guest:
-           hostname: '192.168.200.80'
-           username: 'administrator@vsphere.local'
-           password: 'Root123,'
+           hostname: "{{ vcenter_hostname }}"
+           username: "{{ vcenter_username }}"
+           password: "{{ vcenter_password }}"
            datacenter: "{{ item.datacenter_name }}"
            cluster: "{{ item.cluster }}"
            folder: "{{ item.folder }}"
@@ -77,9 +76,9 @@
       ignore_errors: yes
     - name: Exporter une VM en OVF
       community.vmware.vmware_export_ovf:
-           hostname: '192.168.200.80'
-           username: 'administrator@vsphere.local'
-           password: 'Root123,'
+           hostname: "{{ vcenter_hostname }}"
+           username: "{{ vcenter_username }}"
+           password: "{{ vcenter_password }}"
            validate_certs: false
            name: "{{ item.vm_name }}-clone"
            export_dir: /home/share

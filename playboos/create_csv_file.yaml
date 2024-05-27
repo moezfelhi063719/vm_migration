@@ -20,29 +20,31 @@
 
     - name: Read export list
       community.general.read_csv:
-        path: ExportList.csv
+        path: /root/vm_migration/ExportList.csv
         fieldnames: vm_name,uuid
         delimiter: ','
       register: gather_ExportList
       delegate_to: localhost
-    
-    - debug: 
+
+    - debug:
         var: gather_ExportList
 
     - name: Create CSV content
       set_fact:
         csv_content: |
           vm_name,os,ram,cpu_count,volume_size,openstack_project,vcenter_name,datacenter_name,datastore_name,claster,folder
-          {% for vm in vm_info.virtual_machines and exp in gather_ExportList %}
-          {% if vm.guest_name == exp.Nom  %}
+          {% for exp in gather_ExportList.list %}
+          {% for vm in vm_info.virtual_machines %}
+          {% if vm.guest_name == exp.vm_name  %}
           {{ vm.guest_name }},{{ vm.guest_fullname }},{{ vm.allocated.memory | default(0) }},{{ vm.allocated.cpu | default(0) }},{{ vm.allocated.storage/1024/1024 | default(0) }},admin,vCenter,{{ vm.datacenter}},{{ vm.datastore_url[0].name}},{{ vm.cluster}},{{ vm.folder}}
           {% endif %}
           {% endfor %}
+          {% endfor %}
       delegate_to: localhost
-      
+
 
     - name: Save CSV content to file
       delegate_to: localhost
       copy:
         content: "{{ csv_content }}"
-        dest: list_vm.csv
+        dest: /root/vm_migration/list_vm.csv

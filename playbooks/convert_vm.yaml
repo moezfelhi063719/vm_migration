@@ -1,0 +1,100 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars:
+    ovf_directory: /home/share
+  tasks:
+    - name: Read Vm from CSV file
+      community.general.read_csv:
+        path: list_vm.csv
+        fieldnames: vm_name,os,ram,cpu_count,volume_size,openstack_project,vcenter_name,datacenter_name,datastore_name,cluster,folder
+        delimiter: ','
+      register: gather_list_csv_vm
+
+    - name: check for vmdk file integrity
+      command: 'find {{ ovf_directory }}/{{item.vm_name}}-clone -type f -name "*.vmdk" -exec qemu-img check {} \;'
+      register: vmdk_file_integrity
+      ignore_errors: true
+      loop: "{{ gather_list_csv_vm.list[1:] }}"
+
+    - name: define successful integrity of the vmdk file
+      set_fact:
+       gather_vmdk_compatability: "{{ item.stdout_lines }}"
+      when:
+       - "item.stdout_lines is defined"
+       - "item.stdout_lines is search('No errors were found')"
+      loop: "{{ vmdk_file_integrity.results }}"
+
+    - name: debug gather_vmdk_compatability
+      debug:
+        msg: "{{ gather_vmdk_compatability }}"
+      when: gather_vmdk_compatability is defined
+
+    - name: convert file vmdk file to qcow2 with libvirt
+      block:
+        - name: Get list of VMDK files
+          command: find "{{ ovf_directory }}/{{ item.vm_name }}-clone" -type f -name "*.vmdk"
+          register: vmdk_files
+          loop: "{{ gather_list_csv_vm.list[1:] }}"
+
+        - name: verify virtual size disk of vmdk file
+          shell: |
+            find "{{ ovf_directory }}/{{ item.vm_name }}-clone" -type f -name "*.vmdk" -exec qemu-img info {} \; | grep -E -m 1 'virtual size' | awk '{print $3}'
+          register: gather_virtual_vmdk_disk_size
+          loop: "{{ gather_list_csv_vm.list[1:] }}"
+        - debug:
+            var: gather_virtual_vmdk_disk_size
+
+        - name: Save VM disk size to a file
+          copy:
+            content: "{{ gather_virtual_vmdk_disk_size.stdout }}"
+            dest: "/tmp/migration-vm/vm_disk_size.txt"
+
+        - name: Verifier l'espace disque disponible
+          command: df -h /
+          register: disk_space_info
+
+        - name: Afficher l'espace disque disponible sous /
+          debug:
+            msg: "{{ disk_space_info.stdout_lines[1].split()[3] | regex_replace('G', '')}}"
+
+        - name: convert vmdk to qcow2
+          become: true
+          command: "qemu-img convert -p -f vmdk -O qcow2 {{ item.0.stdout }} /home/sambashare/{{ item.0.stdout | regex_replace('/.*/', '') | regex_replace('vmdk$', 'qcow2')}}"
+          ignore_errors: true
+          loop: "{{ vmdk_files.results | zip(gather_virtual_vmdk_disk_size.results) }}"
+          when:
+            - "disk_space_iinfo.stdout_lines[1].split()[3] | regex_replace('G', '') | int  >  item.1.stdout | int"
+
+        - name: add libvirt
+          become: true
+          ignore_errors: true
+          command: "virt-v2v -i disk /home/sambashare/{{ item.0.stdout | regex_replace('/.*/', '') |regex_replace('vmdk$', 'qcow2')}} -o local -os  /home/libvirt_convert"
+          environment:
+            LIBGUESTFS_BACKEND: 'direct'
+          register: vmdk_libvirt
+          loop: "{{ vmdk_files.results  | zip(gather_virtual_vmdk_disk_size.results)  }}"
+          when:
+            - "disk_space_iinfo.stdout_lines[1].split()[3] | regex_replace('G', '') | int  >  item.1.stdout | int"
+          ignore_errors: true
+
+        - name: confirm that sda file is created correctly
+          find:
+            path: "/home/libvirt_convert/"
+            patterns: "{{ item.stdout | basename |regex_replace('.vmdk', '-sda') }}"
+          register: sda_file_exists
+          ignore_errors: true
+          loop: "{{ vmdk_files.results }}"
+
+        - name: Get list of sda file path
+          command: find "/home/libvirt_convert/{{ item.stdout | basename |regex_replace('.vmdk', '-sda') }}"
+          register: sda_files
+          loop: "{{ vmdk_files.results  }}"
+          # add this instruction to loop | zip(vmdk_libvirt.results)
+          #when:
+           #- "item.1.rc is defined "
+           #- "sda_file_exists.files is defined and sda_file_exists.files | length > 0"
+           #- "vmdk_libvirt.stdout_lines is search('This guest has virtio drivers installed')"
+      #when:
+       #- "vmdk_path is defined and vmdk_path | length > 0"
+       #- "gather_vmdk_compatability is defined and gather_vmdk_compatability |length >0 and gather_vmdk_compatability is search('No errors were found')"

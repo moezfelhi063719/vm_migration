@@ -90,7 +90,7 @@
           command: find "/home/libvirt_convert/{{ item.stdout | basename |regex_replace('.vmdk', '-sda') }}"
           register: sda_files
           loop: "{{ vmdk_files.results  }}"
-          # add this instruction to loop | zip(vmdk_libvirt.results)
+          # add this instruction to loop | zip(vmdk_libvirt.results).
           #when:
            #- "item.1.rc is defined "
            #- "sda_file_exists.files is defined and sda_file_exists.files | length > 0"
